@@ -1,0 +1,14 @@
+# Compiled binaries
+countnames
+shell
+
+# Output files from countnames
+*.out
+*.err
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store

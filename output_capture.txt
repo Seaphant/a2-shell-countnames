@@ -1,0 +1,80 @@
+==============================================
+A2 OUTPUT - Compilation and Test Execution
+Student: William Nguyen
+==============================================
+
+=== COMPILATION ===
+countnames: OK
+shell: OK
+
+=== TEST 1: names1.txt names2.txt ===
+shell> shell> 
+--- 91133.out ---
+Tom Wu: 3
+--- 91134.out ---
+Jenn Xu: 2
+Tom Wu: 1
+--- 91133.err ---
+Warning - file test/names1.txt line 3 is empty.
+
+=== TEST 2: Duplicate file (names2.txt twice) ===
+shell> shell> 
+-rw-r--r--@ 1 williamnguyen10  staff  48 Mar  4 16:00 91141.err
+-rw-r--r--@ 1 williamnguyen10  staff  10 Mar  4 16:00 91141.out
+-rw-r--r--@ 1 williamnguyen10  staff   0 Mar  4 16:00 91142.err
+-rw-r--r--@ 1 williamnguyen10  staff  21 Mar  4 16:00 91142.out
+-rw-r--r--@ 1 williamnguyen10  staff   0 Mar  4 16:00 91143.err
+-rw-r--r--@ 1 williamnguyen10  staff  21 Mar  4 16:00 91143.out
+
+=== TEST 3: names.txt ===
+shell> shell> 
+--- 91149.out ---
+Dave Joe: 2
+John Smith: 1
+Nicky: 1
+Yuan Cheng Chang: 3
+--- 91149.err ---
+Warning - file test/names.txt line 2 is empty.
+Warning - file test/names.txt line 5 is empty.
+
+=== TEST 4: testm1_empty_lines.txt ===
+shell> shell> 
+--- 91161.out ---
+Alice: 2
+Bob: 3
+--- 91161.err ---
+Warning - file test/testm1_empty_lines.txt line 3 is empty.
+
+=== TEST 5: Custom test_custom1_empty.txt ===
+shell> shell> 
+91176.err
+91176.out
+(empty files)
+
+=== TEST 6: Custom test_custom2_single_repeated.txt ===
+shell> shell> 
+--- 91181.out ---
+Alice: 5
+--- 91181.err ---
+Warning - file test/test_custom2_single_repeated.txt line 6 is empty.
+
+=== TEST 7: Custom test_custom3_leading_trailing_empty.txt ===
+shell> shell> 
+--- 91196.out ---
+Bob: 2
+Carol: 2
+--- 91196.err ---
+Warning - file test/test_custom3_leading_trailing_empty.txt line 1 is empty.
+Warning - file test/test_custom3_leading_trailing_empty.txt line 4 is empty.
+Warning - file test/test_custom3_leading_trailing_empty.txt line 7 is empty.
+
+=== TEST 8: Error - nonexistent file ===
+shell> shell> 
+--- 91211.err ---
+Warning - file test/names1.txt line 3 is empty.
+--- 91212.err ---
+error: cannot open file test/nonexistent_xyz.txt
+
+==============================================
+All tests completed.
+==============================================

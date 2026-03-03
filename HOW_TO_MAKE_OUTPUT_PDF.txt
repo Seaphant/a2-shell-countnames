@@ -1,0 +1,33 @@
+How to create output.pdf for A2 submission
+==========================================
+
+The assignment requires a PDF with screenshots of compilation and execution on all test cases.
+
+Option A — Screenshots (recommended)
+1. Open a terminal in the project directory.
+2. Compile:
+   gcc -o countnames countnames.c -Wall -Werror
+   gcc -o shell shell.c -Wall -Werror
+   Take a screenshot.
+3. Run the shell and execute each test (see README.md):
+   ./shell
+   Then at shell> prompt:
+   ./countnames test/names1.txt test/names2.txt
+   ./countnames test/names1.txt test/names2.txt test/names2.txt
+   ./countnames test/names.txt
+   ./countnames test/testm1_empty_lines.txt
+   ./countnames test/test_custom1_empty.txt
+   ./countnames test/test_custom2_single_repeated.txt
+   ./countnames test/test_custom3_leading_trailing_empty.txt
+   ./countnames test/names1.txt test/nonexistent_xyz.txt test/names2.txt
+   exit
+   After each run, show: ls *.out *.err and cat <one>.out <one>.err
+   Take screenshots.
+4. Paste screenshots into Word / Google Docs / Pages.
+5. Export or Print to PDF. Save as output.pdf.
+
+Option B — From terminal capture
+  Run the tests and redirect output: ./run_tests.sh > output_capture.txt 2>&1
+  Then open output_capture.txt, copy to a doc, and export to PDF.
+
+Submit: shell.c, countnames.c, README.md, output.pdf, and test/ with your 3 custom test files.

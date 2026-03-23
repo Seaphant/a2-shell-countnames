@@ -7,6 +7,13 @@
 
 #define MAX_LINE 4096
 #define MAX_ARGS 256
+#define MAX_DISTINCT 300
+#define PIPE_NAME_LEN 30
+
+typedef struct {
+    char name[PIPE_NAME_LEN + 1];
+    int count;
+} NameCountData;
 
 static int tokenize(char *line, char *argv[], int max_args) {
     int argc = 0;
@@ -19,6 +26,57 @@ static int tokenize(char *line, char *argv[], int max_args) {
     return argc;
 }
 
+/* Find name in aggregated results, return index or -1 */
+static int agg_find(NameCountData agg[], int n, const char *name) {
+    for (int i = 0; i < n; i++)
+        if (strcmp(agg[i].name, name) == 0) return i;
+    return -1;
+}
+
+/* Add or merge NameCountData into aggregated results */
+static int agg_add(NameCountData agg[], int *n, const char *name, int count) {
+    int idx = agg_find(agg, *n, name);
+    if (idx >= 0) {
+        agg[idx].count += count;
+        return *n;
+    }
+    if (*n >= MAX_DISTINCT) return *n;
+    strncpy(agg[*n].name, name, PIPE_NAME_LEN);
+    agg[*n].name[PIPE_NAME_LEN] = '\0';
+    agg[*n].count = count;
+    (*n)++;
+    return *n;
+}
+
+/* Read exactly len bytes from fd (handles partial reads) */
+static ssize_t read_all(int fd, void *buf, size_t len) {
+    size_t total = 0;
+    while (total < len) {
+        ssize_t n = read(fd, (char *)buf + total, len - total);
+        if (n <= 0) return total;
+        total += (size_t)n;
+    }
+    return (ssize_t)total;
+}
+
+/* Read child's results from pipe and merge into aggregation */
+static void read_pipe_and_aggregate(int fd, NameCountData agg[], int *nagg) {
+    int num_entries;
+    if (read_all(fd, &num_entries, sizeof(int)) != (ssize_t)sizeof(int)) return;
+
+    for (int i = 0; i < num_entries; i++) {
+        NameCountData data;
+        if (read_all(fd, &data, sizeof(data)) != (ssize_t)sizeof(data)) break;
+        agg_add(agg, nagg, data.name, data.count);
+    }
+}
+
+static int cmp_agg(const void *a, const void *b) {
+    const NameCountData *x = (const NameCountData *)a;
+    const NameCountData *y = (const NameCountData *)b;
+    return strcmp(x->name, y->name);
+}
+
 int main(void) {
     char line[MAX_LINE];
 
@@ -27,89 +85,117 @@ int main(void) {
         fflush(stdout);
 
         if (!fgets(line, sizeof(line), stdin)) {
-            // EOF (Ctrl-D)
             printf("\n");
             break;
         }
 
-        // Tokenize
         char *args[MAX_ARGS];
         int argc = tokenize(line, args, MAX_ARGS);
         if (argc == 0) continue;
 
-        if (strcmp(args[0], "exit") == 0) {
+        if (strcmp(args[0], "exit") == 0)
             break;
-        }
 
-        // Special behavior: "countnames file1 file2 ..."
-        // Spawn 1 child per file; if no files, spawn 1 child reading stdin.
+        /* countnames gets special treatment - 1 child per file, pipe for aggregation (A3) */
         if (strcmp(args[0], "countnames") == 0 || strcmp(args[0], "./countnames") == 0) {
             int nfiles = argc - 1;
             int nchildren = (nfiles > 0) ? nfiles : 1;
 
+            int (*pipes)[2] = (int (*)[2])malloc((size_t)nchildren * sizeof(int[2]));
             pid_t *pids = (pid_t *)calloc((size_t)nchildren, sizeof(pid_t));
-            if (!pids) {
-                perror("calloc");
+            if (!pipes || !pids) {
+                perror("malloc/calloc");
+                free(pipes);
+                free(pids);
                 continue;
             }
 
+            /* Create one pipe per child */
+            for (int i = 0; i < nchildren; i++) {
+                if (pipe(pipes[i]) < 0) {
+                    perror("pipe");
+                    for (int j = 0; j < i; j++) { close(pipes[j][0]); close(pipes[j][1]); }
+                    free(pipes);
+                    free(pids);
+                    continue;
+                }
+            }
+
+            /* Fork all children first (parallel execution) */
             for (int i = 0; i < nchildren; i++) {
                 pid_t pid = fork();
                 if (pid < 0) {
                     perror("fork");
-                    // still wait for any already-forked children
                     nchildren = i;
                     break;
                 }
 
                 if (pid == 0) {
-                    // child
+                    /* Child: close all pipe ends except our write end */
+                    for (int j = 0; j < nchildren; j++) {
+                        close(pipes[j][0]);
+                        if (j != i) close(pipes[j][1]);
+                    }
+                    char fd_str[16];
+                    snprintf(fd_str, sizeof(fd_str), "%d", pipes[i][1]);
+
                     if (nfiles > 0) {
-                        char *cn_argv[3];
+                        char *cn_argv[4];
                         cn_argv[0] = (char *)"countnames";
-                        cn_argv[1] = args[i + 1];  // ith file
-                        cn_argv[2] = NULL;
+                        cn_argv[1] = args[i + 1];
+                        cn_argv[2] = fd_str;
+                        cn_argv[3] = NULL;
                         execvp("./countnames", cn_argv);
                     } else {
-                        // stdin mode
-                        char *cn_argv[2];
+                        char *cn_argv[3];
                         cn_argv[0] = (char *)"countnames";
-                        cn_argv[1] = NULL;
+                        cn_argv[1] = fd_str;
+                        cn_argv[2] = NULL;
                         execvp("./countnames", cn_argv);
                     }
-
-                    // exec only returns on error
                     perror("execvp ./countnames");
                     _exit(127);
                 }
-
-                // parent
                 pids[i] = pid;
             }
 
-            // Wait for all children (wait() returns *any* finished child)
-            for (int i = 0; i < nchildren; i++) {
-                int status;
-                pid_t w = wait(&status);
-                if (w < 0) {
-                    perror("wait");
-                    break;
-                }
+            /* Parent: close all write ends so we get EOF when children exit */
+            for (int i = 0; i < nchildren; i++)
+                close(pipes[i][1]);
 
-                // Optional: print child completion info
-                // (You can remove this if you want the shell to be quieter.)
-                if (WIFEXITED(status)) {
-                    // printf("child %d exited with %d\n", (int)w, WEXITSTATUS(status));
-                } else if (WIFSIGNALED(status)) {
-                    // printf("child %d killed by signal %d\n", (int)w, WTERMSIG(status));
+            /* Aggregate results from all children */
+            NameCountData agg[MAX_DISTINCT];
+            int nagg = 0;
+            memset(agg, 0, sizeof(agg));
+
+            /* Wait for any child, read its pipe, repeat until no more children */
+            int status;
+            pid_t w;
+            while ((w = wait(&status)) != (pid_t)-1) {
+                for (int i = 0; i < nchildren; i++) {
+                    if (pids[i] == w) {
+                        read_pipe_and_aggregate(pipes[i][0], agg, &nagg);
+                        break;
+                    }
                 }
             }
 
+            /* Print aggregated results to stdout */
+            if (nagg > 0) {
+                qsort(agg, (size_t)nagg, sizeof(NameCountData), cmp_agg);
+                for (int i = 0; i < nagg; i++)
+                    printf("%s: %d\n", agg[i].name, agg[i].count);
+            }
+
+            /* Close all pipe read ends */
+            for (int i = 0; i < nchildren; i++)
+                close(pipes[i][0]);
+            free(pipes);
             free(pids);
             continue;
         }
 
-        // Default behavior: run one command like a normal shell (single child)
+        /* normal command - just run it */
         pid_t pid = fork();
         if (pid < 0) {
             perror("fork");
@@ -120,12 +206,9 @@ int main(void) {
             perror("execvp");
             _exit(127);
         }
-
         int status;
-        if (waitpid(pid, &status, 0) < 0) {
+        if (waitpid(pid, &status, 0) < 0)
             perror("waitpid");
-        }
     }
-
     return 0;
 }

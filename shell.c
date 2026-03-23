@@ -26,14 +26,14 @@ static int tokenize(char *line, char *argv[], int max_args) {
     return argc;
 }
 
-/* Find name in aggregated results, return index or -1 */
+// lookup name in our aggregated results
 static int agg_find(NameCountData agg[], int n, const char *name) {
     for (int i = 0; i < n; i++)
         if (strcmp(agg[i].name, name) == 0) return i;
     return -1;
 }
 
-/* Add or merge NameCountData into aggregated results */
+// add to aggregation, merge count if name already exists
 static int agg_add(NameCountData agg[], int *n, const char *name, int count) {
     int idx = agg_find(agg, *n, name);
     if (idx >= 0) {
@@ -48,7 +48,7 @@ static int agg_add(NameCountData agg[], int *n, const char *name, int count) {
     return *n;
 }
 
-/* Read exactly len bytes from fd (handles partial reads) */
+// keep reading until we get full len bytes (pipes can return partial data)
 static ssize_t read_all(int fd, void *buf, size_t len) {
     size_t total = 0;
     while (total < len) {
@@ -59,7 +59,7 @@ static ssize_t read_all(int fd, void *buf, size_t len) {
     return (ssize_t)total;
 }
 
-/* Read child's results from pipe and merge into aggregation */
+// read what a child sent and merge into our totals
 static void read_pipe_and_aggregate(int fd, NameCountData agg[], int *nagg) {
     int num_entries;
     if (read_all(fd, &num_entries, sizeof(int)) != (ssize_t)sizeof(int)) return;
@@ -96,7 +96,7 @@ int main(void) {
         if (strcmp(args[0], "exit") == 0)
             break;
 
-        /* countnames gets special treatment - 1 child per file, pipe for aggregation (A3) */
+        // countnames: one child per file, each writes to its own pipe
         if (strcmp(args[0], "countnames") == 0 || strcmp(args[0], "./countnames") == 0) {
             int nfiles = argc - 1;
             int nchildren = (nfiles > 0) ? nfiles : 1;
@@ -110,18 +110,20 @@ int main(void) {
                 continue;
             }
 
-            /* Create one pipe per child */
+            int pipe_ok = 1;
             for (int i = 0; i < nchildren; i++) {
-                if (pipe(pipes[i]) < 0) {
+                if (pipe(pipes[i]) < 0) {  // one pipe per child
                     perror("pipe");
                     for (int j = 0; j < i; j++) { close(pipes[j][0]); close(pipes[j][1]); }
                     free(pipes);
                     free(pids);
-                    continue;
+                    pipe_ok = 0;
+                    break;
                 }
             }
+            if (!pipe_ok) continue;
 
-            /* Fork all children first (parallel execution) */
+            int n_pipes = nchildren;  // save this in case fork fails partway
             for (int i = 0; i < nchildren; i++) {
                 pid_t pid = fork();
                 if (pid < 0) {
@@ -131,7 +133,7 @@ int main(void) {
                 }
 
                 if (pid == 0) {
-                    /* Child: close all pipe ends except our write end */
+                    // child: close read ends, keep only our write end
                     for (int j = 0; j < nchildren; j++) {
                         close(pipes[j][0]);
                         if (j != i) close(pipes[j][1]);
@@ -159,43 +161,43 @@ int main(void) {
                 pids[i] = pid;
             }
 
-            /* Parent: close all write ends so we get EOF when children exit */
-            for (int i = 0; i < nchildren; i++)
+            // close our copies of write ends so we see EOF when kids exit
+            for (int i = 0; i < n_pipes; i++)
                 close(pipes[i][1]);
 
-            /* Aggregate results from all children */
+            // collect results from each child as they finish
             NameCountData agg[MAX_DISTINCT];
             int nagg = 0;
             memset(agg, 0, sizeof(agg));
 
-            /* Wait for any child, read its pipe, repeat until no more children */
+            // wait returns -1 when no more kids left
             int status;
             pid_t w;
             while ((w = wait(&status)) != (pid_t)-1) {
                 for (int i = 0; i < nchildren; i++) {
-                    if (pids[i] == w) {
+                    if (pids[i] == w) {  // found which child finished
                         read_pipe_and_aggregate(pipes[i][0], agg, &nagg);
                         break;
                     }
                 }
             }
 
-            /* Print aggregated results to stdout */
+            // print combined totals
             if (nagg > 0) {
                 qsort(agg, (size_t)nagg, sizeof(NameCountData), cmp_agg);
                 for (int i = 0; i < nagg; i++)
                     printf("%s: %d\n", agg[i].name, agg[i].count);
             }
 
-            /* Close all pipe read ends */
-            for (int i = 0; i < nchildren; i++)
+            // cleanup
+            for (int i = 0; i < n_pipes; i++)
                 close(pipes[i][0]);
             free(pipes);
             free(pids);
             continue;
         }
 
-        /* normal command - just run it */
+        // regular command
         pid_t pid = fork();
         if (pid < 0) {
             perror("fork");

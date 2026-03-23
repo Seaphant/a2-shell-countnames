@@ -2,178 +2,140 @@
 
 **Student name(s):** William Nguyen
 
-## Communication Method
+## Communication
 
-**Pipe** — One pipe per child process. Children write NameCountData structs to their pipe; parent reads and aggregates when each child finishes.
+Used **pipe** — each child gets its own pipe, writes NameCountData structs to it, parent reads when the child exits and adds to the totals.
 
-## How to compile
+## Compile
 
-From project directory:
+From the project folder:
 
 ```
 gcc -o countnames countnames.c -Wall -Werror
 gcc -o shell shell.c -Wall -Werror
 ```
 
-Keep countnames and shell in the same directory so the shell can find `./countnames`.
+Keep countnames and shell in the same directory.
 
-## How to run
+## Run
 
-1. Run `./shell`
-2. At `shell>` prompt, type:
-   - `./countnames test/names1.txt test/names2.txt`
-   - or `countnames test/names1.txt test/names2.txt`
-3. Parent prints aggregated name counts to **stdout** (your terminal)
-4. Each child still creates `PID.out` and `PID.err` (one pair per file)
-5. Type `exit` to quit
+1. `./shell`
+2. At the prompt type something like `./countnames test/names1.txt test/names2.txt`
+3. Parent prints the combined name counts to stdout
+4. Each child still makes its own PID.out and PID.err
+5. `exit` to quit
 
 ## Test cases
 
-Run from inside the shell (`./shell` then enter commands).
+Run these from inside the shell.
 
-### Test 1: `test/names1.txt` and `test/names2.txt`
+### Test 1: names1 + names2
 
 **Command:** `./countnames test/names1.txt test/names2.txt`
 
-**What it tests:** Two files with overlapping names; parent aggregates counts across children.
+Two files, Tom Wu shows up in both. Parent should add the counts.
 
-- Child 1 (names1): Tom Wu: 3
-- Child 2 (names2): Jenn Xu: 2, Tom Wu: 1
-- **Expected stdout from parent:**  
-  Jenn Xu: 2  
-  Tom Wu: 4
+Expected output:
+```
+Jenn Xu: 2
+Tom Wu: 4
+```
 
-**Edge case:** Same name in multiple files — counts are summed.
-
----
-
-### Test 2: `test/names1.txt` `test/names2.txt` `test/names2.txt`
+### Test 2: Three files (one duplicated)
 
 **Command:** `./countnames test/names1.txt test/names2.txt test/names2.txt`
 
-**What it tests:** Three files (one duplicated); three children run in parallel.
+Same file twice = two children process it. Tests parallel + aggregation.
 
-- Child 1: Tom Wu: 3
-- Child 2 & 3 (same file): Jenn Xu: 2, Tom Wu: 1 each
-- **Expected stdout from parent:**  
-  Jenn Xu: 4  
-  Tom Wu: 5
+Expected output:
+```
+Jenn Xu: 4
+Tom Wu: 5
+```
 
-**Edge case:** Duplicate file argument — multiple children process same file.
-
----
-
-### Test 3: `test/names.txt`
+### Test 3: Single file
 
 **Command:** `./countnames test/names.txt`
 
-**What it tests:** Single file with multiple names and empty lines.
+Multiple names, some empty lines (warnings go to .err).
 
-- **Expected stdout from parent:**  
-  Dave Joe: 2  
-  John Smith: 1  
-  Nicky: 1  
-  Yuan Cheng Chang: 3
+Expected output:
+```
+Dave Joe: 2
+John Smith: 1
+Nicky: 1
+Yuan Cheng Chang: 3
+```
 
-**Edge case:** Empty lines produce warnings in `PID.err`.
-
----
-
-### Test 4: `test/testm1_empty_lines.txt`
+### Test 4: Empty line in middle
 
 **Command:** `./countnames test/testm1_empty_lines.txt`
 
-**What it tests:** File with empty line in middle.
+Expected output:
+```
+Alice: 2
+Bob: 3
+```
 
-- **Expected stdout from parent:**  
-  Alice: 2  
-  Bob: 3
-
-**Edge case:** Empty line warning in `.err`.
-
----
-
-### Test 5: `test/test_custom1_empty.txt`
+### Test 5: Empty file
 
 **Command:** `./countnames test/test_custom1_empty.txt`
 
-**What it tests:** Empty input file.
+No names, so nothing printed. Child still exits 0.
 
-- **Expected stdout from parent:** (nothing — no names)
-
-**Edge case:** Empty file — child returns 0, parent gets empty aggregation.
-
----
-
-### Test 6: `test/test_custom2_single_repeated.txt`
+### Test 6: One name repeated
 
 **Command:** `./countnames test/test_custom2_single_repeated.txt`
 
-**What it tests:** Single name repeated many times.
+Expected output:
+```
+Alice: 5
+```
 
-- **Expected stdout from parent:**  
-  Alice: 5
-
-**Edge case:** Single distinct name.
-
----
-
-### Test 7: `test/test_custom3_leading_trailing_empty.txt`
+### Test 7: Leading/trailing empty lines
 
 **Command:** `./countnames test/test_custom3_leading_trailing_empty.txt`
 
-**What it tests:** Empty lines at start, middle, and end.
+Expected output:
+```
+Bob: 2
+Carol: 2
+```
 
-- **Expected stdout from parent:**  
-  Bob: 2  
-  Carol: 2
-
-**Edge case:** Multiple empty line warnings in `.err`.
-
----
-
-### Test 8: Nonexistent file (mixed with valid files)
+### Test 8: Nonexistent file mixed in
 
 **Command:** `./countnames test/names1.txt test/nonexistent_xyz.txt test/names2.txt`
 
-**What it tests:** One child fails to open file; others succeed.
+One child fails (writes to its .err), others still run. Parent aggregates from the ones that succeed.
 
-- Child for `nonexistent_xyz.txt` writes error to its `.err` and exits 1
-- Other two children succeed and send data
-- **Expected stdout from parent:**  
-  Jenn Xu: 2  
-  Tom Wu: 4
+Expected output:
+```
+Jenn Xu: 2
+Tom Wu: 4
+```
 
-**Edge case:** Partial failure — parent still aggregates from successful children.
+### Test 9: Stdin
 
----
+**Command:** `./countnames` then type names, Ctrl-D when done
 
-### Test 9: Stdin (no args)
-
-**Command:** `./countnames` then type names, Ctrl-D to end
-
-**What it tests:** Single child reading from stdin.
-
-- **Expected stdout from parent:** Counts for names you typed.
-
-**Edge case:** Stdin mode with pipe communication.
+One child reads from stdin. Output is whatever you typed.
 
 ---
 
 ## Lessons learned
 
-- Pipes enable parent-child communication: parent creates pipe, child inherits fds, writes results, parent reads after child exits.
-- One pipe per child avoids interleaved data when multiple children run in parallel.
-- `wait()` returns -1 when no more children exist; loop until then to reap all.
-- Use `read()` in a loop to handle partial reads from pipes.
-- Children still create PID.out and PID.err; parent aggregates and prints to its stdout.
+- Pipes let the child send data back to the parent. Parent creates it, child inherits the fds, writes, parent reads.
+- One pipe per child avoids mixing up data when they run at the same time.
+- wait() returns -1 when there's no more children, so loop until that.
+- read() can return partial data so you need a loop to get everything.
+- PID.out and PID.err still get created per child like in A2.
 
 ## References
 
-- [Assignment 3 spec](https://sjsu.instructure.com/) (Canvas)
-- [Fork/exec/wait slides](https://docs.google.com/presentation/d/1tFAJHE88J3ylpWa9CZ5dhcAnSy1giA-YiUEUEIJej0Q/edit?folder=1HuyG3ez13YNEHILs7ky31jL4dIPhU4Sp#slide=id.g27d9461c96e_1_127)
-- `man pipe`, `man fork`, `man execvp`, `man wait`
+- Assignment spec on Canvas
+- Fork/exec/wait slides: https://docs.google.com/presentation/d/1tFAJHE88J3ylpWa9CZ5dhcAnSy1giA-YiUEUEIJej0Q/edit
+- man pipe, man fork, man wait
 
 ## Acknowledgements
 
-Course materials, assignment specification, and IPC sample code.
+Course materials and slides.
